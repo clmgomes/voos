@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radar ADS-B Real - Autônomo</title>
+    <title>Radar ADS-B Real - Versão Web</title>
     <style>
         body {
             background-color: #0d0e11;
@@ -56,13 +56,13 @@
         <canvas id="radarCanvas" width="400" height="400"></canvas>
     </div>
     <div id="info">
-        <div id="apiStatus">Detectando localização...</div>
+        <div id="apiStatus">Iniciando sistema...</div>
         <div id="flightList" class="status">Aguardando primeira varredura...</div>
     </div>
 
     <script>
         // CONFIGURAÇÃO DA API AIRLABS
-        const AIRLABS_API_KEY = "SUA_CHAVE_AQUI"; // <-- Insira sua chave da AirLabs aqui para o GitHub Pages
+        const AIRLABS_API_KEY = "SUA_CHAVE_AQUI"; // <-- COLOQUE SUA CHAVE AQUI
         
         const canvas = document.getElementById('radarCanvas');
         const ctx = canvas.getContext('2d');
@@ -72,33 +72,33 @@
         const centerY = height / 2;
         const maxRadius = width / 2;
 
-        // Coordenadas dinâmicas (Bento Gonçalves como fallback inicial)
+        // Fallback inicial: Bento Gonçalves
         let myLat = -29.1714; 
         let myLon = -51.5186;
-        let radarRangeKm = 150; // Raio de varredura padrão em km
+        let radarRangeKm = 150; 
         let locationDetected = false;
 
         let airplanes = [];
         let sweepAngle = 0;
 
-        // Descobre onde o usuário está baseado no IP da conexão antes de pedir os voos
+        // Localização automática por IP
         async function detectLocationByIP() {
             try {
+                document.getElementById('apiStatus').innerText = "Detectando sua localização...";
                 const response = await fetch('https://ipapi.co/json/');
                 const data = await response.json();
                 if (data.latitude && data.longitude) {
                     myLat = data.latitude;
                     myLon = data.longitude;
-                    console.log(`Localização definida via IP: ${data.city || 'Região'} (${myLat}, ${myLon})`);
+                    console.log(`Localização: ${data.city} (${myLat}, ${myLon})`);
                 }
             } catch (e) {
-                console.error("Falha ao rastrear IP, usando Bento Gonçalves como padrão.", e);
+                console.error("Usando coordenadas padrão de Bento Gonçalves.", e);
             } finally {
                 locationDetected = true;
             }
         }
 
-        // Busca os dados de voo diretamente da AirLabs pelo Front-end
         async function fetchLiveFlightData() {
             try {
                 if (!locationDetected) {
@@ -107,9 +107,24 @@
 
                 document.getElementById('apiStatus').innerText = "Buscando tráfego aéreo local...";
 
-                const url = `https://airlabs.co/api/v9/flights?api_key=${AIRLABS_API_KEY}&lat=${myLat}&lng=${myLon}&distance=${radarRangeKm}`;
-                const response = await fetch(url);
+                // URL Direta para a AirLabs
+                const urlAirLabs = `https://airlabs.co/api/v9/flights?api_key=${AIRLABS_API_KEY}&lat=${myLat}&lng=${myLon}&distance=${radarRangeKm}`;
+                
+                // Usamos o proxy do cors-anywhere se a requisição direta falhar, ou tentamos direto com tratamento de erro nativo:
+                const response = await fetch(urlAirLabs);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP erro! Status: ${response.status}`);
+                }
+                
                 const apiData = await response.json();
+                
+                // Se a API retornar um erro interno (ex: chave inválida ou limite atingido)
+                if (apiData.error) {
+                    document.getElementById('apiStatus').innerText = `Erro API: ${apiData.error.message}`;
+                    return;
+                }
+
                 airplanes = [];
 
                 if (apiData && apiData.response && apiData.response.length > 0) {
@@ -130,11 +145,11 @@
                     updateFlightListText();
                 } else {
                     document.getElementById('apiStatus').innerText = "Radar Ativo - Sem tráfego no momento";
-                    document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de cobertura.";
+                    document.getElementById('flightList').innerText = "Nenhum voo detectado neste raio.";
                 }
             } catch (error) {
-                console.error("Erro na requisição dos voos:", error);
-                document.getElementById('apiStatus').innerText = "Erro ao conectar com o serviço de tráfego";
+                console.error("Erro na requisição:", error);
+                document.getElementById('apiStatus').innerText = "Erro de conexão/CORS. Verifique o console (F12).";
             }
         }
 
@@ -220,9 +235,9 @@
             requestAnimationFrame(drawRadar);
         }
 
-        // Inicialização
+        // Inicialização básica
         fetchLiveFlightData();
-        setInterval(fetchLiveFlightData, 20000); // Atualiza os dados a cada 20 segundos para poupar cota da API
+        setInterval(fetchLiveFlightData, 30000); // 30 segundos poupa requisições no GitHub
 
         drawRadar();
     </script>
