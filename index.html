@@ -125,7 +125,7 @@
         const myLat = -29.1714; 
         const myLon = -51.5186;
         const myCityName = "BG";
-        const radarRangeKm = 80; // Escala visual travada em 80km
+        const radarRangeKm = 120; // Escala visual travada em 80km
 
         let airplanes = [];
         let sweepAngle = 0;
@@ -161,10 +161,10 @@
 
                 // Caixa de busca ao redor da Serra Gaúcha
                 const bounds = {
-                    minLat: myLat - 1.2,
-                    maxLat: myLat + 1.2,
-                    minLon: myLon - 1.2,
-                    maxLon: myLon + 1.2
+                    minLat: myLat - 1.0,
+                    maxLat: myLat + 1.0,
+                    minLon: myLon - 1.0,
+                    maxLon: myLon + 1.0
                 };
 
                 // A URL oficial do SEU worker que acabou de propagar o SSL
