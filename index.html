@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radar ADS-B Real - Multitela</title>
+    <title>Radar ADS-B Real - Versão Estável</title>
     <style>
         * {
             box-sizing: border-box;
@@ -28,7 +28,7 @@
             margin-bottom: 15px;
         }
         h1 {
-            font-size: clamp(1.2rem, 4vw, 1.8rem); /* Ajusta o tamanho da fonte com base na tela */
+            font-size: clamp(1.2rem, 4vw, 1.8rem);
             letter-spacing: 2px;
             text-transform: uppercase;
         }
@@ -38,13 +38,13 @@
             align-items: center;
             justify-content: center;
             width: 100%;
-            max-width: 550px; /* Limite máximo para não ficar gigante no Desktop */
+            max-width: 550px;
             margin: auto;
         }
         #radarContainer {
             position: relative;
             width: 100%;
-            aspect-ratio: 1 / 1; /* Mantém o container sempre um quadrado perfeito */
+            aspect-ratio: 1 / 1;
             border-radius: 50%;
             box-shadow: 0 0 25px rgba(16, 185, 129, 0.2);
             background: radial-gradient(circle, #0f172a 0%, #020617 100%);
@@ -81,13 +81,6 @@
             font-size: clamp(0.8rem, 2.5vw, 1rem);
             white-space: nowrap;
             display: inline-block;
-            animation: marquee 25s linear infinite; /* Efeito letreiro corrido se houver muitos voos */
-        }
-        
-        /* Animação de letreiro para mobile não quebrar a linha */
-        @keyframes marquee {
-            0% { transform: translate3d(50%, 0, 0); }
-            100% { transform: translate3d(-100%, 0, 0); }
         }
     </style>
 </head>
@@ -111,22 +104,16 @@
     </footer>
 
     <script>
-        // CONFIGURAÇÃO DA API AIRLABS
-        const AIRLABS_API_KEY = "55baabb7-0d55-4dc0-ad79-da0f76f2be96"; // <-- Insira sua chave da AirLabs aqui
-        
         const canvas = document.getElementById('radarCanvas');
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('radarContainer');
 
         let width, height, centerX, centerY, maxRadius;
 
-        // Função crucial: Ajusta a resolução interna do Canvas para nunca pixelar na tela
         function resizeCanvas() {
             const rect = container.getBoundingClientRect();
-            // Define o tamanho real de renderização baseado no tamanho do layout CSS
             canvas.width = rect.width;
             canvas.height = rect.height;
-            
             width = canvas.width;
             height = canvas.height;
             centerX = width / 2;
@@ -134,16 +121,16 @@
             maxRadius = width / 2;
         }
 
-        // Configurações geográficas dinâmicas
-        let myLat = -29.1714; 
-        let myLon = -51.5186;
-        let myCityName = "BG";
-        let radarRangeKm = 120; 
-        let locationDetected = false;
+        // Centro definitivo do Radar estável (Bento Gonçalves - RS)
+        const myLat = -29.1714; 
+        const myLon = -51.5186;
+        const myCityName = "BG";
+        const radarRangeKm = 80; // Escala visual travada em 80km
 
         let airplanes = [];
         let sweepAngle = 0;
 
+        // Lista de cidades estratégicas para pontos de referência em solo
         const regionalCities = [
             { name: "BG", lat: -29.1714, lon: -51.5186 },
             { name: "CXS", lat: -29.1681, lon: -51.1794 },
@@ -167,72 +154,65 @@
             { name: "CGB", lat: -15.6014, lon: -56.0979 }
         ];
 
-        async function detectLocationByIP() {
-            try {
-                document.getElementById('apiStatus').innerText = "Sintonizando localização atual...";
-                const response = await fetch('https://ipapi.co/json/');
-                const data = await response.json();
-                if (data.latitude && data.longitude) {
-                    myLat = data.latitude;
-                    myLon = data.longitude;
-                    myCityName = data.city ? data.city.substring(0, 3).toUpperCase() : "LOC";
-                }
-            } catch (e) {
-                console.error(e);
-            } finally {
-                locationDetected = true;
-            }
-        }
-
+        // Função de captura direta via feed público do Flightradar24
         async function fetchLiveFlightData() {
             try {
-                // Garante a localização base por IP antes de processar os voos
-                if (!locationDetected) {
-                    await detectLocationByIP();
-                }
+                document.getElementById('apiStatus').innerText = "Varrendo espaço aéreo local...";
 
-                document.getElementById('apiStatus').innerText = "Varrendo espaço aéreo (Modo Económico)...";
+                // Caixa delimitadora de busca ao redor do centro operacional (+- 1.5 graus)
+                const bounds = {
+                    minLat: myLat - 1.5,
+                    maxLat: myLat + 1.5,
+                    minLon: myLon - 1.5,
+                    maxLon: myLon + 1.5
+                };
 
-                // ALTERAÇÃO CRUCIAL: URL Geral da AirLabs filtrando apenas campos essenciais (_fields)
-                // Isso ativa a regra de cobrança fixa (1 crédito por chamada)
-                const url = `https://airlabs.co/api/v9/flights?api_key=${AIRLABS_API_KEY}&_fields=flight_icao,reg_number,lat,lng,alt,dir`;
+                const fr24Url = `https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds=${bounds.maxLat},${bounds.minLat},${bounds.minLon},${bounds.maxLon}&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0`;
                 
-                const response = await fetch(url);
-                const apiData = await response.json();
+                // Proxy ultra-estável que permite chamadas de arquivos locais (file://) sem estourar CORS
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(fr24Url)}`;
+
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error("Falha de resposta do proxy");
+                
+                const data = await response.json();
                 airplanes = [];
 
-                if (apiData && apiData.response && apiData.response.length > 0) {
-                    apiData.response.forEach(flight => {
-                        // Verifica se o avião tem coordenadas válidas vindas do pacote bruto mundial
-                        if (flight.lat && flight.lng) {
-                            
-                            // 1. FAZ A MATEMÁTICA LOCAL: Calcula a distância em relação à sua localização
-                            const distance = haversineDistance(myLat, myLon, flight.lat, flight.lng);
+                if (data) {
+                    Object.keys(data).forEach(key => {
+                        if (Array.isArray(data[key])) {
+                            const flight = data[key];
+                            const lat = flight[1];
+                            const lon = flight[2];
 
-                            // 2. FILTRA NO SEU NAVEGADOR: Só processa e guarda se estiver dentro dos 80km
-                            if (distance <= radarRangeKm) {
-                                const callsign = flight.flight_icao || flight.reg_number || 'UNK';
-                                const bearing = calculateBearing(myLat, myLon, flight.lat, flight.lng);
-                                const altitudeFeet = flight.alt || 0;
-                                const heading = flight.dir || 0;
+                            if (lat && lon) {
+                                const distance = haversineDistance(myLat, myLon, lat, lon);
 
-                                airplanes.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
+                                // Filtro matemático local de 80km ao redor da base
+                                if (distance <= radarRangeKm) {
+                                    const callsign = flight[16] || flight[13] || 'UNK';
+                                    const bearing = calculateBearing(myLat, myLon, lat, lon);
+                                    const altitudeFeet = flight[4] || 0;
+                                    const heading = flight[3] || 0;
+
+                                    airplanes.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
+                                }
                             }
                         }
                     });
-                    
-                    document.getElementById('apiStatus').innerText = `Radar Ativo - ${airplanes.length} alvos detectados`;
+
+                    document.getElementById('apiStatus').innerText = `Radar Ativo - ${airplanes.length} alvos na região`;
                     updateFlightListText();
                 } else {
                     document.getElementById('apiStatus').innerText = "Radar Ativo - Sem tráfego no momento";
                     document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de 80km.";
-                    document.getElementById('flightList').style.animation = "none";
                 }
             } catch (error) {
-                console.error("Erro na varredura económica:", error);
-                document.getElementById('apiStatus').innerText = "Erro ao conectar com o serviço de tráfego";
+                console.error("Erro no processamento do feed público:", error);
+                document.getElementById('apiStatus').innerText = "Reconectando ao feed de tráfego...";
             }
         }
+
         function haversineDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -249,22 +229,23 @@
         }
 
         function updateFlightListText() {
-            if (airplanes.length === 0) return;
+            if (airplanes.length === 0) {
+                document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de 80km.";
+                return;
+            }
             const textoLista = airplanes.map(a => `${a.callsign} (${Math.round(a.distance)}km)`).join('  |  ');
             document.getElementById('flightList').innerText = textoLista;
-            document.getElementById('flightList').style.animation = "marquee 25s linear infinite"; // Ativa o letreiro corrido
         }
 
         function drawRadar() {
-            // Limpa a tela aplicando o efeito de rastro
             ctx.fillStyle = 'rgba(2, 6, 23, 0.12)';
             ctx.fillRect(0, 0, width, height);
 
-            // Escala fontes com base na proporção dinâmica do tamanho do canvas atual
             const baseFontSize = Math.max(8, width / 36); 
             const titleFontSize = baseFontSize + 2;
+            const sizeFactor = width / 400;
 
-            // Anéis concêntricos do radar
+            // Linhas de anéis concêntricos
             ctx.strokeStyle = 'rgba(16, 185, 129, 0.15)';
             ctx.lineWidth = 1;
             for (let r = maxRadius / 4; r <= maxRadius; r += maxRadius / 4) {
@@ -276,13 +257,12 @@
                 ctx.fillText(`${Math.round((r / maxRadius) * radarRangeKm)}km`, centerX + 6, centerY - r + baseFontSize + 2);
             }
 
-            // Linhas de eixos centrais
             ctx.beginPath();
             ctx.moveTo(centerX, 0); ctx.lineTo(centerX, height);
             ctx.moveTo(0, centerY); ctx.lineTo(width, centerY);
             ctx.stroke();
 
-            // DESENHO DAS CIDADES
+            // DESENHO DAS CIDADES (Branco fosco)
             regionalCities.forEach(city => {
                 const distance = haversineDistance(myLat, myLon, city.lat, city.lon);
                 const bearing = calculateBearing(myLat, myLon, city.lat, city.lon);
@@ -292,8 +272,6 @@
                     const angleRad = (bearing - 90) * Math.PI / 180;
                     const x = centerX + rPixel * Math.cos(angleRad);
                     const y = centerY + rPixel * Math.sin(angleRad);
-
-                    const sizeFactor = width / 400; // Multiplicador para os elementos não sumirem em telas pequenas
 
                     if (distance < 2) {
                         ctx.fillStyle = '#ffffff';
@@ -311,14 +289,12 @@
                 }
             });
 
-            // DESENHO DOS AVIÕES
+            // DESENHO DOS AVIÕES (Verde Neon)
             airplanes.forEach(plane => {
                 const rPixel = (plane.distance / radarRangeKm) * maxRadius;
                 const angleRad = (plane.bearing - 90) * Math.PI / 180;
                 const x = centerX + rPixel * Math.cos(angleRad);
                 const y = centerY + rPixel * Math.sin(angleRad);
-
-                const sizeFactor = width / 400;
 
                 ctx.fillStyle = '#22c55e';
                 ctx.shadowColor = '#22c55e';
@@ -344,7 +320,7 @@
                 ctx.stroke();
             });
 
-            // Linha de Varredura
+            // Feixe de Varredura
             ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -358,13 +334,12 @@
             requestAnimationFrame(drawRadar);
         }
 
-        // Executa o ajuste de tamanho inicial e adiciona o ouvinte para rotação de tela/redimensionamento
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Inicialização dos loops de dados
+        // Inicialização estável imediata
         fetchLiveFlightData();
-        setInterval(fetchLiveFlightData, 30000);
+        setInterval(fetchLiveFlightData, 10000); // Varredura de dados livre a cada 10 segundos
 
         drawRadar();
     </script>
