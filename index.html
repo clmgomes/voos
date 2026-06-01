@@ -184,46 +184,55 @@
             }
         }
 
-                async function fetchLiveFlightData() {
+        async function fetchLiveFlightData() {
             try {
+                // Garante a localização base por IP antes de processar os voos
                 if (!locationDetected) {
                     await detectLocationByIP();
                 }
 
-                document.getElementById('apiStatus').innerText = "Varrendo espaço aéreo...";
+                document.getElementById('apiStatus').innerText = "Varrendo espaço aéreo (Modo Económico)...";
 
-                const url = `https://airlabs.co/api/v9/flights?api_key=${AIRLABS_API_KEY}&lat=${myLat}&lng=${myLon}&distance=${radarRangeKm}`;
+                // ALTERAÇÃO CRUCIAL: URL Geral da AirLabs filtrando apenas campos essenciais (_fields)
+                // Isso ativa a regra de cobrança fixa (1 crédito por chamada)
+                const url = `https://airlabs.co/api/v9/flights?api_key=${AIRLABS_API_KEY}&_fields=flight_icao,reg_number,lat,lng,alt,dir`;
+                
                 const response = await fetch(url);
                 const apiData = await response.json();
                 airplanes = [];
 
                 if (apiData && apiData.response && apiData.response.length > 0) {
                     apiData.response.forEach(flight => {
+                        // Verifica se o avião tem coordenadas válidas vindas do pacote bruto mundial
                         if (flight.lat && flight.lng) {
-                            const callsign = flight.flight_icao || flight.reg_number || 'UNK';
+                            
+                            // 1. FAZ A MATEMÁTICA LOCAL: Calcula a distância em relação à sua localização
                             const distance = haversineDistance(myLat, myLon, flight.lat, flight.lng);
-                            const bearing = calculateBearing(myLat, myLon, flight.lat, flight.lng);
-                            const altitudeFeet = flight.alt || 0;
-                            const heading = flight.dir || 0;
 
+                            // 2. FILTRA NO SEU NAVEGADOR: Só processa e guarda se estiver dentro dos 80km
                             if (distance <= radarRangeKm) {
+                                const callsign = flight.flight_icao || flight.reg_number || 'UNK';
+                                const bearing = calculateBearing(myLat, myLon, flight.lat, flight.lng);
+                                const altitudeFeet = flight.alt || 0;
+                                const heading = flight.dir || 0;
+
                                 airplanes.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
                             }
                         }
                     });
+                    
                     document.getElementById('apiStatus').innerText = `Radar Ativo - ${airplanes.length} alvos detectados`;
                     updateFlightListText();
                 } else {
                     document.getElementById('apiStatus').innerText = "Radar Ativo - Sem tráfego no momento";
                     document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de 80km.";
-                    document.getElementById('flightList').style.animation = "none"; // Desativa letreiro se não houver dados
+                    document.getElementById('flightList').style.animation = "none";
                 }
             } catch (error) {
-                console.error(error);
+                console.error("Erro na varredura económica:", error);
                 document.getElementById('apiStatus').innerText = "Erro ao conectar com o serviço de tráfego";
             }
         }
-
         function haversineDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
             const dLat = (lat2 - lat1) * Math.PI / 180;
