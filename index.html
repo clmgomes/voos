@@ -155,28 +155,29 @@
         ];
 
         // Função de captura direta via feed público do Flightradar24
-        async function fetchLiveFlightData() {
+       async function fetchLiveFlightData() {
             try {
                 document.getElementById('apiStatus').innerText = "Varrendo espaço aéreo local...";
 
-                // Caixa delimitadora de busca ao redor do centro operacional (+- 1.5 graus)
+                // Caixa de busca ao redor da Serra Gaúcha
                 const bounds = {
-                    minLat: myLat - 1.5,
-                    maxLat: myLat + 1.5,
-                    minLon: myLon - 1.5,
-                    maxLon: myLon + 1.5
+                    minLat: myLat - 1.2,
+                    maxLat: myLat + 1.2,
+                    minLon: myLon - 1.2,
+                    maxLon: myLon + 1.2
                 };
 
-                const fr24Url = `https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds=${bounds.maxLat},${bounds.minLat},${bounds.minLon},${bounds.maxLon}&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0`;
+                // A URL oficial do SEU worker que acabou de propagar o SSL
+                const seuWorkerUrl = "https://meu-proxy-radar.clmgomes.workers.dev/"; 
                 
-                // Proxy ultra-estável que permite chamadas de arquivos locais (file://) sem estourar CORS
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(fr24Url)}`;
+                // Monta a query string perfeitamente com a quebra de cache
+                const urlFinal = `${seuWorkerUrl}?bounds=${bounds.maxLat},${bounds.minLat},${bounds.minLon},${bounds.maxLon}&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0&_nocache=${Date.now()}`;
 
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Falha de resposta do proxy");
+                const response = await fetch(urlFinal);
+                if (!response.ok) throw new Error("Servidor Cloudflare ocupado");
                 
                 const data = await response.json();
-                airplanes = [];
+                dadosNovosDaInternet = []; // Alimenta a fila de sincronismo mecânico do feixe
 
                 if (data) {
                     Object.keys(data).forEach(key => {
@@ -188,28 +189,24 @@
                             if (lat && lon) {
                                 const distance = haversineDistance(myLat, myLon, lat, lon);
 
-                                // Filtro matemático local de 80km ao redor da base
+                                // Filtra para desenhar apenas dentro do raio de 80km
                                 if (distance <= radarRangeKm) {
                                     const callsign = flight[16] || flight[13] || 'UNK';
                                     const bearing = calculateBearing(myLat, myLon, lat, lon);
                                     const altitudeFeet = flight[4] || 0;
                                     const heading = flight[3] || 0;
 
-                                    airplanes.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
+                                    dadosNovosDaInternet.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
                                 }
                             }
                         }
                     });
 
-                    document.getElementById('apiStatus').innerText = `Radar Ativo - ${airplanes.length} alvos na região`;
-                    updateFlightListText();
-                } else {
-                    document.getElementById('apiStatus').innerText = "Radar Ativo - Sem tráfego no momento";
-                    document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de 80km.";
+                    document.getElementById('apiStatus').innerText = `Radar Ativo - ${dadosNovosDaInternet.length} alvos na região`;
                 }
             } catch (error) {
-                console.error("Erro no processamento do feed público:", error);
-                document.getElementById('apiStatus').innerText = "Reconectando ao feed de tráfego...";
+                console.error("Erro no canal privado:", error);
+                document.getElementById('apiStatus').innerText = "Reconectando ao feed privado...";
             }
         }
 
