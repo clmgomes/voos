@@ -112,7 +112,7 @@
 
     <script>
         // CONFIGURAÇÃO DA API AIRLABS
-        const AIRLABS_API_KEY = "SUA_CHAVE_AQUI"; // <-- Insira sua chave da AirLabs aqui
+        const AIRLABS_API_KEY = "55baabb7-0d55-4dc0-ad79-da0f76f2be96"; // <-- Insira sua chave da AirLabs aqui
         
         const canvas = document.getElementById('radarCanvas');
         const ctx = canvas.getContext('2d');
@@ -138,7 +138,7 @@
         let myLat = -29.1714; 
         let myLon = -51.5186;
         let myCityName = "BG";
-        let radarRangeKm = 80; 
+        let radarRangeKm = 120; 
         let locationDetected = false;
 
         let airplanes = [];
@@ -185,7 +185,7 @@
             }
         }
 
-        async function fetchLiveFlightData() {
+                async function fetchLiveFlightData() {
             try {
                 if (!locationDetected) {
                     await detectLocationByIP();
