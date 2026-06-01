@@ -125,9 +125,10 @@
         const myLat = -29.1714; 
         const myLon = -51.5186;
         const myCityName = "BG";
-        const radarRangeKm = 120; // Escala visual travada em 80km
+        const radarRangeKm = 120; // Mantido em 120km conforme o seu código anterior
 
-        let airplanes = [];
+        let airplanes = [];             // Lista de aviões visíveis estáveis na tela
+        let dadosNovosDaInternet = [];  // Fila de espera que recebe dados do Worker
         let sweepAngle = 0;
 
         // Lista de cidades estratégicas para pontos de referência em solo
@@ -141,43 +142,34 @@
             { name: "CWB", lat: -25.4290, lon: -49.2671 },
             { name: "SPO", lat: -23.5505, lon: -46.6333 },
             { name: "CPQ", lat: -22.9056, lon: -47.0608 },
-            { name: "RIO", lat: -22.9068, lon: -43.1729 },
-            { name: "BHZ", lat: -19.9167, lon: -43.9345 },
-            { name: "VIX", lat: -20.3155, lon: -40.3128 },
-            { name: "BSB", lat: -15.7942, lon: -47.8822 },
-            { name: "GYN", lat: -16.6869, lon: -49.2648 },
-            { name: "SSA", lat: -12.9714, lon: -38.5014 },
-            { name: "REC", lat: -8.0543, lon: -34.8813 },
-            { name: "FOR", lat: -3.7319, lon: -38.5267 },
-            { name: "MAO", lat: -3.1190, lon: -60.0217 },
-            { name: "BEL", lat: -1.4558, lon: -48.4902 },
-            { name: "CGB", lat: -15.6014, lon: -56.0979 }
+            { name: "RIO", lat: -22.9068, lon: -43.1729 }
         ];
 
         // Função de captura direta via feed público do Flightradar24
-       async function fetchLiveFlightData() {
+        async function fetchLiveFlightData() {
             try {
                 document.getElementById('apiStatus').innerText = "Varrendo espaço aéreo local...";
 
                 // Caixa de busca ao redor da Serra Gaúcha
                 const bounds = {
-                    minLat: myLat - 1.0,
-                    maxLat: myLat + 1.0,
-                    minLon: myLon - 1.0,
-                    maxLon: myLon + 1.0
+                    minLat: myLat - 1.2,
+                    maxLat: myLat + 1.2,
+                    minLon: myLon - 1.2,
+                    maxLon: myLon + 1.2
                 };
 
-                // A URL oficial do SEU worker que acabou de propagar o SSL
+                // A URL oficial do SEU worker com SSL ativo
                 const seuWorkerUrl = "https://meu-proxy-radar.clmgomes.workers.dev/"; 
                 
-                // Monta a query string perfeitamente com a quebra de cache
                 const urlFinal = `${seuWorkerUrl}?bounds=${bounds.maxLat},${bounds.minLat},${bounds.minLon},${bounds.maxLon}&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0&_nocache=${Date.now()}`;
 
                 const response = await fetch(urlFinal);
                 if (!response.ok) throw new Error("Servidor Cloudflare ocupado");
                 
                 const data = await response.json();
-                dadosNovosDaInternet = []; // Alimenta a fila de sincronismo mecânico do feixe
+                
+                // Criamos um array temporário para não limpar o sincronismo bruscamente
+                let novosVoos = []; 
 
                 if (data) {
                     Object.keys(data).forEach(key => {
@@ -189,20 +181,21 @@
                             if (lat && lon) {
                                 const distance = haversineDistance(myLat, myLon, lat, lon);
 
-                                // Filtra para desenhar apenas dentro do raio de 80km
                                 if (distance <= radarRangeKm) {
                                     const callsign = flight[16] || flight[13] || 'UNK';
                                     const bearing = calculateBearing(myLat, myLon, lat, lon);
                                     const altitudeFeet = flight[4] || 0;
                                     const heading = flight[3] || 0;
 
-                                    dadosNovosDaInternet.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
+                                    novosVoos.push({ callsign, distance, bearing, altitude: altitudeFeet, heading });
                                 }
                             }
                         }
                     });
 
-                    document.getElementById('apiStatus').innerText = `Radar Ativo - ${dadosNovosDaInternet.length} alvos na região`;
+                    // Atualiza a fila de espera em segundo plano de uma vez só
+                    dadosNovosDaInternet = novosVoos;
+                    document.getElementById('apiStatus').innerText = `Radar Ativo - ${dadosNovosDaInternet.length} alvos detectados`;
                 }
             } catch (error) {
                 console.error("Erro no canal privado:", error);
@@ -227,7 +220,7 @@
 
         function updateFlightListText() {
             if (airplanes.length === 0) {
-                document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de 80km.";
+                document.getElementById('flightList').innerText = "Nenhum voo detectado no raio de 120km.";
                 return;
             }
             const textoLista = airplanes.map(a => `${a.callsign} (${Math.round(a.distance)}km)`).join('  |  ');
@@ -235,6 +228,7 @@
         }
 
         function drawRadar() {
+            // Efeito Phosphor Decay (Rastro analógico)
             ctx.fillStyle = 'rgba(2, 6, 23, 0.12)';
             ctx.fillRect(0, 0, width, height);
 
@@ -286,16 +280,56 @@
                 }
             });
 
-            // DESENHO DOS AVIÕES (Verde Neon)
+            // Converte o ângulo do feixe de radianos para graus (0 a 360)
+            let currentSweepGrade = (sweepAngle * 180 / Math.PI + 90) % 360;
+
+            // -----------------------------------------------------------------
+            // LÓGICA DE SINCRONISMO REAL: ATUALIZA SÓ NA PASSAGEM DA LINHA
+            // -----------------------------------------------------------------
+            dadosNovosDaInternet.forEach(dadoFresco => {
+                let aviaoNaTela = airplanes.find(a => a.callsign === dadoFresco.callsign);
+
+                if (!aviaoNaTela) {
+                    // SE FOR UM AVIÃO NOVO: Só entra no mapa se o feixe bater no ângulo dele
+                    let diferencaAngulo = Math.abs(currentSweepGrade - dadoFresco.bearing);
+                    if (diferencaAngulo > 180) diferencaAngulo = 360 - diferencaAngulo;
+
+                    if (diferencaAngulo < 4) {
+                        dadoFresco.renderBrilho = 15; // Inicia com brilho máximo (flash)
+                        airplanes.push(dadoFresco);
+                        updateFlightListText();
+                    }
+                } else {
+                    // SE JÁ EXISTE: Calcula colisão com a posição antiga para congelá-lo até o impacto
+                    let diferencaAngulo = Math.abs(currentSweepGrade - aviaoNaTela.bearing);
+                    if (diferencaAngulo > 180) diferencaAngulo = 360 - diferencaAngulo;
+
+                    if (diferencaAngulo < 4) {
+                        // Linha colidiu com ponto antigo! Salta para as coordenadas novas e brilha forte
+                        aviaoNaTela.distance = dadoFresco.distance;
+                        aviaoNaTela.bearing = dadoFresco.bearing;
+                        aviaoNaTela.altitude = dadoFresco.altitude;
+                        aviaoNaTela.heading = dadoFresco.heading;
+                        aviaoNaTela.renderBrilho = 15; 
+                        updateFlightListText();
+                    }
+                }
+            });
+
+            // DESENHO DOS AVIÕES ATIVOS
             airplanes.forEach(plane => {
                 const rPixel = (plane.distance / radarRangeKm) * maxRadius;
                 const angleRad = (plane.bearing - 90) * Math.PI / 180;
                 const x = centerX + rPixel * Math.cos(angleRad);
                 const y = centerY + rPixel * Math.sin(angleRad);
 
+                // Efeito fade out do brilho do alvo
+                if (!plane.renderBrilho) plane.renderBrilho = 6;
+                if (plane.renderBrilho > 6) plane.renderBrilho -= 0.08;
+
                 ctx.fillStyle = '#22c55e';
                 ctx.shadowColor = '#22c55e';
-                ctx.shadowBlur = 8 * sizeFactor;
+                ctx.shadowBlur = plane.renderBrilho * sizeFactor;
                 ctx.beginPath();
                 ctx.arc(x, y, 5 * sizeFactor, 0, Math.PI * 2);
                 ctx.fill();
@@ -308,6 +342,7 @@
                 ctx.font = `bold ${Math.round(baseFontSize)}px Courier New`;
                 ctx.fillText(`${plane.altitude}ft`, x + (10 * sizeFactor), y + (9 * sizeFactor));
 
+                // Vetor de Rumo
                 const headingRad = (plane.heading - 90) * Math.PI / 180;
                 ctx.strokeStyle = 'rgba(34, 197, 94, 0.7)';
                 ctx.lineWidth = 1.5 * sizeFactor;
@@ -317,15 +352,16 @@
                 ctx.stroke();
             });
 
-            // Feixe de Varredura
+            // Linha de Feixe de Varredura
             ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2.5;
             ctx.beginPath();
             ctx.moveTo(centerX, centerY);
             ctx.lineTo(centerX + maxRadius * Math.cos(sweepAngle), centerY + maxRadius * Math.sin(sweepAngle));
             ctx.stroke();
 
-            sweepAngle += 0.012;
+            // Velocidade da linha ajustada de forma suave para capturar os alvos perfeitamente
+            sweepAngle += 0.010;
             if (sweepAngle > Math.PI * 2) sweepAngle = 0;
 
             requestAnimationFrame(drawRadar);
@@ -334,9 +370,9 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Inicialização estável imediata
+        // Inicialização estável imediata via Worker
         fetchLiveFlightData();
-        setInterval(fetchLiveFlightData, 10000); // Varredura de dados livre a cada 10 segundos
+        setInterval(fetchLiveFlightData, 5000); // Consulta o Worker a cada 5 segundos
 
         drawRadar();
     </script>
